@@ -10,3 +10,4 @@ Steps on how to make the driver work.
 7) run the fileOp using "./fileOp"
 8) Read and Write to the character device and check for additional information using "dmesg"
 9) To remove the module use "sudo rmmod usb_driver" (all the additional character devices ets. will be removed automatically).
+10) Use "sudo make clean"
