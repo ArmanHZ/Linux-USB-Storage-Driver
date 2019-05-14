@@ -2,6 +2,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/usb.h>
+#include <linux/cdev.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <asm/uaccess.h>
@@ -14,15 +15,18 @@ static int device_release(struct inode *, struct file*);
 static ssize_t device_read(struct file *, char *, size_t, loff_t *);
 static ssize_t device_write(struct file *, const char *, size_t, loff_t *);
 
-#define DEVICE_NAME "storage_driver"
+#define DEVICE_NAME "usb_driver"
 #define BUF_LEN 80
 
-static int MAJOR;
+static int MAJOR = -1;
+static struct cdev mycdev;
+static struct class *myclass = NULL;
 static int DEVICE_OPEN = 0;
 static char msg[BUF_LEN];
 static char msg2[BUF_LEN];
 static char *msg_ptr;
 static char *msg_ptr2;
+static int is_plugged = 0;
 
 static struct file_operations fops = {
 	.read = device_read,
@@ -35,6 +39,7 @@ static struct usb_device *device;
 
 // Also prints the device info to dmesg
 static int device_probe(struct usb_interface *interface, const struct usb_device_id *id) {
+	is_plugged = 1;
 	struct usb_host_interface *iface_desc;
 	struct usb_endpoint_descriptor *endpoint;
 	int i;
@@ -54,6 +59,7 @@ static int device_probe(struct usb_interface *interface, const struct usb_device
 }
 
 static void device_disconnect(struct usb_interface *interface) {
+	is_plugged = 0;
 	printk(KERN_INFO "Device interface %d now disconnected\n", interface->cur_altsetting->desc.bInterfaceNumber);
 }
 
@@ -71,30 +77,18 @@ static struct usb_driver device_driver = {
 	.id_table = device_table
 };
 
-void character_dev_cleanup(void) {
-	unregister_chrdev(MAJOR, DEVICE_NAME);
-}
-
-int character_dev_setup(void) {
-	MAJOR = register_chrdev(0, DEVICE_NAME, &fops);
-	if (MAJOR < 0) {
-		printk(KERN_ALERT "Registering character device failed with %d\n", MAJOR);
-		return MAJOR;
-	}
-	printk(KERN_INFO "Device was assigned Major number %d\n", MAJOR);
-	printk(KERN_INFO "Please create a device file with\n");
-	printk(KERN_INFO "'mknod /dev/%s c %d 0'.\n", DEVICE_NAME, MAJOR);
-	
-	return 0;
-}
-
 static int device_open(struct inode *inode, struct file *file) {
+	if (is_plugged < 1) {
+		printk(KERN_ALERT "Please plug in the USB");
+		return -1;
+	}
 	static int counter = 0;
 	if (DEVICE_OPEN)
 		return -EBUSY;
 	
 	DEVICE_OPEN++;
 	sprintf(msg, "Device accessed %d times.\n", counter++);
+	strcat(msg, msg2);
 	printk(KERN_INFO "Current Message buffer: %s", msg2);
 	msg_ptr = msg;
 	msg_ptr2 = msg2;
@@ -112,6 +106,10 @@ static int device_release(struct inode *inode, struct file *file) {
 }
 
 static ssize_t device_read(struct file *file, char *buffer, size_t length, loff_t *offset) {
+	if (is_plugged < 1) {
+		printk(KERN_ALERT "Please plug in the USB");
+		return -1;
+	}
 	printk(KERN_INFO "Device Read");
 	int bytes_read = 0;
 	
@@ -132,6 +130,10 @@ static ssize_t device_read(struct file *file, char *buffer, size_t length, loff_
 /* This function is called when somebody tries to 
  * write into our device file. */
 static ssize_t device_write(struct file *file, const char *buffer, size_t length, loff_t *offset) {
+	if (is_plugged < 1) {
+		printk(KERN_ALERT "Please plug in the USB");
+		return -1;
+	}
 	printk(KERN_INFO "Device Write");
 	int ret;
 	size_t input_buffer_length = strlen(buffer);
@@ -143,15 +145,55 @@ static ssize_t device_write(struct file *file, const char *buffer, size_t length
 	return ret;
 }
 
+static void cleanup(int device_created) {
+    if (device_created) {
+        device_destroy(myclass, MAJOR);
+        cdev_del(&mycdev);
+    }
+    if (myclass)
+        class_destroy(myclass);
+    if (MAJOR != -1)
+        unregister_chrdev_region(MAJOR, 1);
+}
+
+static int myinit(void) {
+    int device_created = 0;
+
+    /* cat /proc/devices */
+    if (alloc_chrdev_region(&MAJOR, 0, 1, DEVICE_NAME "_proc") < 0)
+        goto error;
+    /* ls /sys/class */
+    if ((myclass = class_create(THIS_MODULE, DEVICE_NAME "_sys")) == NULL)
+        goto error;
+    /* ls /dev/ */
+    if (device_create(myclass, NULL, MAJOR, NULL, DEVICE_NAME "_dev") == NULL)
+        goto error;
+    device_created = 1;
+    cdev_init(&mycdev, &fops);
+    if (cdev_add(&mycdev, MAJOR, 1) == -1) {
+        goto error;
+	}
+	printk(KERN_INFO "Device registered with Major: %d, Minor: %d", MAJOR(MAJOR), MINOR(MAJOR));
+	
+	return 0;
+
+error:
+    cleanup(device_created);
+    printk(KERN_ERR "An error occured while registering character device");
+	return -1;
+}
+
 static int __init device_init(void) {
 	int ret;
-	character_dev_setup();
+	myinit();
 	ret = usb_register(&device_driver);
 	return ret;
 }
 
 static void __exit device_exit(void) {
-	character_dev_cleanup();
+	is_plugged = 0;
+	cleanup(1);
+	printk(KERN_INFO "All registered devices are cleared!");
 	usb_deregister(&device_driver);
 }
 
