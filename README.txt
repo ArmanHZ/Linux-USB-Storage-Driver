@@ -1,15 +1,12 @@
-In the first commit, the USB was only able to connect to the OS with its register and vendor id's.
-Now I will try to add some I/O capabilities using USB Endpoints.
+Steps on how to make the driver work.
 
-Some USB Endpoints and their types that might be used in this project.
-
-Control – For transferring control information. Examples include resetting the device, querying information about the device, etc. All USB devices always have the default control endpoint point zero.
-
-Interrupt – For small and fast data transfer, typically of up to 8 bytes. Examples include data 
-transfer for serial ports, human interface devices (HIDs) like keyboard, mouse, etc.
-
-Bulk – For big but comparatively slow data transfer. A typical example is data transfers for mass storage devices.
-
-Isochronous – For big data transfer with bandwidth guarantee, though data integrity may not be guaranteed. Typical practical usage examples include transfers of time-sensitive data like of audio, video
-
-
+1) Run the make file together with the usb_driver.c
+2) Install the module "sudo insmod usb_driver.ko"
+3) Plug in your USB
+4) Use "dmesg" to check if the USB is recognised, if not, you may have to change the Vendor and Device id's in usb_driver.c
+4.1) If USB related info is not printed in dmesg, then use "sudo rmmod uas" and "sudo rmmod usb-storage or usb_storage"
+5) The driver has registered the USB and allocated Character device regions which you can see in "ls /dev/" as usb_driver_dev, in "ls /sys/class" as usb_driver_sys, and "cat /proc/devices" as usb_driver_proc.
+6) Compile the fileOp.c using "gcc -o fileOp fileOp.c"
+7) run the fileOp using "./fileOp"
+8) Read and Write to the character device and check for additional information using "dmesg"
+9) To remove the module use "sudo rmmod usb_driver" (all the additionla character devices ets. will be removed automatically).
