@@ -9,4 +9,4 @@ Steps on how to make the driver work.
 6) Compile the fileOp.c using "gcc -o fileOp fileOp.c"
 7) run the fileOp using "./fileOp"
 8) Read and Write to the character device and check for additional information using "dmesg"
-9) To remove the module use "sudo rmmod usb_driver" (all the additionla character devices ets. will be removed automatically).
+9) To remove the module use "sudo rmmod usb_driver" (all the additional character devices ets. will be removed automatically).
